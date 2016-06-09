@@ -5,7 +5,7 @@ i40e drivers from e1000.sf.net with netmap patches
 
 1.Clone netmap
 ```
-git clone [netmap](https://github.com/luigirizzo/netmap)`
+git clone https://github.com/luigirizzo/netmap
 cd netmap/LINUX
 ```
 
