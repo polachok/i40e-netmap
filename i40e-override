@@ -1,0 +1,2 @@
+i40e-src := /home/plhk/i40e/i40e-1.5.16/src
+i40e-patch := /home/plhk/i40e/i40e-1.5.16.patched.diff

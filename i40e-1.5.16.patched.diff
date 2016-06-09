@@ -1,0 +1,103 @@
+diff -u a/i40e/i40e_main.c a/i40e/src/i40e_main.c
+--- a/i40e/i40e_main.c	2016-04-08 01:18:57.000000000 +0300
++++ a/i40e/i40e_main.c	2016-06-03 12:54:00.422986858 +0300
+@@ -131,6 +131,10 @@
+ MODULE_VERSION(DRV_VERSION);
+ 
+ static struct workqueue_struct *i40e_wq;
++#if defined(CONFIG_NETMAP) || defined(CONFIG_NETMAP_MODULE)
++#define NETMAP_I40E_MAIN
++#include <i40e_netmap_linux.h>
++#endif
+ 
+ /**
+  * i40e_get_lump - find a lump of free generic resource
+@@ -3069,6 +3073,10 @@
+ 	/* cache tail off for easier writes later */
+ 	ring->tail = hw->hw_addr + I40E_QTX_TAIL(pf_q);
+ 
++#ifdef DEV_NETMAP
++	i40e_netmap_configure_tx_ring(ring);
++#endif /* DEV_NETMAP */
++
+ 	return 0;
+ }
+ 
+@@ -3141,6 +3149,11 @@
+ 	ring->tail = hw->hw_addr + I40E_QRX_TAIL(pf_q);
+ 	writel(0, ring->tail);
+ 
++#ifdef DEV_NETMAP
++	if (i40e_netmap_configure_rx_ring(ring))
++		return 0;
++#endif /* DEV_NETMAP */
++
+ 	i40e_alloc_rx_buffers(ring, I40E_DESC_UNUSED(ring));
+ 
+ 	return 0;
+@@ -10099,6 +10112,11 @@
+ 		return -ENODEV;
+ 	}
+ 
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		netmap_detach(vsi->netdev);
++#endif
++
+ 	uplink_seid = vsi->uplink_seid;
+ 	if (vsi->type != I40E_VSI_SRIOV) {
+ 		if (vsi->netdev_registered) {
+@@ -10460,6 +10478,12 @@
+ 	    (vsi->type == I40E_VSI_VMDQ2)) {
+ 		ret = i40e_vsi_config_rss(vsi);
+ 	}
++
++#ifdef DEV_NETMAP
++	if (vsi->netdev_registered)
++		i40e_netmap_attach(vsi);
++#endif
++
+ 	return vsi;
+ 
+ err_rings:
+diff -u a/i40e/i40e_txrx.c a/i40e/src/i40e_txrx.c
+--- a/i40e/i40e_txrx.c	2016-04-08 01:18:57.000000000 +0300
++++ a/i40e/i40e_txrx.c	2016-06-03 12:54:13.238986996 +0300
+@@ -25,6 +25,10 @@
+ #include "i40e.h"
+ #include "i40e_prototype.h"
+ 
++#if defined(CONFIG_NETMAP) || defined (CONFIG_NETMAP_MODULE)
++#include <i40e_netmap_linux.h>
++#endif /* DEV_NETMAP */
++
+ static inline __le64 build_ctob(u32 td_cmd, u32 td_offset, unsigned int size,
+ 				u32 td_tag)
+ {
+@@ -696,6 +700,11 @@
+ 	unsigned int total_packets = 0;
+ 	unsigned int total_bytes = 0;
+ 
++#ifdef DEV_NETMAP
++	if (netmap_tx_irq(tx_ring->netdev, tx_ring->queue_index) != NM_IRQ_PASS)
++		return true;
++#endif /* DEV_NETMAP */
++
+ 	tx_buf = &tx_ring->tx_bi[i];
+ 	tx_desc = I40E_TX_DESC(tx_ring, i);
+ 	i -= tx_ring->count;
+@@ -2119,6 +2128,14 @@
+ 
+ 	i40e_for_each_ring(ring, q_vector->rx) {
+ 		int cleaned;
++#ifdef DEV_NETMAP
++		int dummy, nm_irq;
++		nm_irq = netmap_rx_irq(vsi->netdev, ring->queue_index, &dummy);
++		if (nm_irq != NM_IRQ_PASS) {
++			clean_complete &= (nm_irq == NM_IRQ_COMPLETED);
++			continue;
++		}
++#endif /* DEV_NETMAP */
+ 
+ 		cleaned = i40e_clean_rx_irq(ring, budget_per_ring);
+ 		work_done += cleaned;
